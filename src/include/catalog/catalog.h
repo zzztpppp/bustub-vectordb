@@ -292,7 +292,7 @@ class Catalog {
 
   auto CreateVectorIndex(Transaction *txn, const std::string &index_name, const std::string &table_name,
                          const Schema &schema, const Schema &key_schema, const std::vector<uint32_t> &key_attrs,
-                         std::string distance_fn, std::vector<std::pair<std::string, int>> options,
+                         const std::string &distance_fn, const std::vector<std::pair<std::string, int>> &options,
                          IndexType index_type) -> IndexInfo * {
     // Reject the creation request for nonexistent table
     if (table_names_.find(table_name) == table_names_.end()) {

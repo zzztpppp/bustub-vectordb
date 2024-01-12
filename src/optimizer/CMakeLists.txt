@@ -13,7 +13,7 @@ add_library(
         order_by_index_scan.cpp
         sort_limit_as_topn.cpp
         seqscan_as_indexscan.cpp
-        vector_indexscan.cpp)
+        vector_index_scan.cpp)
 
 set(ALL_OBJECT_FILES
         ${ALL_OBJECT_FILES} $<TARGET_OBJECTS:bustub_optimizer>
