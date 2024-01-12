@@ -89,6 +89,8 @@ class Optimizer {
    */
   auto OptimizeSeqScanAsIndexScan(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
 
+  auto OptimizeAsVectorIndexScan(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
+
   /** @brief check if the index can be matched */
   auto MatchIndex(const std::string &table_name, uint32_t index_key_idx)
       -> std::optional<std::tuple<index_oid_t, std::string>>;
