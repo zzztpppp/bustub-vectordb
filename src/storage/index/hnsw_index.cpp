@@ -1,15 +1,17 @@
 #include <algorithm>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <queue>
 #include <random>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 #include "common/macros.h"
 #include "execution/expressions/vector_expression.h"
-#include "fmt/core.h"
 #include "fmt/format.h"
+#include "fmt/std.h"
 #include "storage/index/hnsw_index.h"
 #include "storage/index/index.h"
 #include "storage/index/vector_index.h"
@@ -44,7 +46,7 @@ auto NSW::FindNearestNeighbors(const std::vector<double> &base_vector, size_t li
                                const std::vector<size_t> &entry_points) -> std::vector<size_t> {
   BUSTUB_ASSERT(limit > 0, "limit > 0");
   std::unordered_set<size_t> candidates;
-  for (const auto &entry_point : entry_points) {
+  for (const auto entry_point : entry_points) {
     std::unordered_set<size_t> visited;
     std::priority_queue<std::pair<double, size_t>, std::vector<std::pair<double, size_t>>, std::greater<>> explore_q;
     std::priority_queue<std::pair<double, size_t>, std::vector<std::pair<double, size_t>>, std::less<>> result_set;
@@ -87,16 +89,35 @@ auto NSW::FindNearestNeighbors(const std::vector<double> &base_vector, size_t li
   return final_candidates;
 }
 
+auto NSW::AddVertex(size_t vertex_id) { in_vertices_.push_back(vertex_id); }
+
 auto NSW::Insert(const std::vector<double> &vec, size_t vertex_id, size_t ef_construction, size_t m) {
-  auto neighbors = FindNearestNeighbors(vec, ef_construction, {0});
+  auto neighbors = FindNearestNeighbors(vec, m, SampleEntryPoints(ef_construction));
   for (size_t i = 0; i < m && i < neighbors.size(); i++) {
     Connect(vertex_id, neighbors[i]);
   }
+  AddVertex(vertex_id);
 }
 
 void NSW::Connect(size_t vertex_a, size_t vertex_b) {
   edges_[vertex_a].push_back(vertex_b);
   edges_[vertex_b].push_back(vertex_a);
+}
+
+auto NSW::SampleEntryPoints(size_t num_elements) -> std::vector<size_t> {
+  std::random_device rand_dev;
+  std::mt19937 generator(rand_dev());
+  std::uniform_int_distribution<size_t> dist(0, in_vertices_.size() - 1);
+  std::unordered_set<size_t> result_set;
+  for (size_t i = 0; i < num_elements && i < in_vertices_.size(); i++) {
+    size_t vert;
+    do {
+      size_t id = dist(generator);
+      vert = in_vertices_[id];
+    } while (result_set.find(vert) != result_set.end());
+    result_set.emplace(vert);
+  }
+  return {result_set.begin(), result_set.end()};
 }
 
 auto HNSWIndex::AddVertex(const std::vector<double> &vec, RID rid) -> size_t {
@@ -118,7 +139,7 @@ void HNSWIndex::BuildIndex(std::vector<std::pair<std::vector<double>, RID>> init
 }
 
 auto HNSWIndex::ScanVectorKey(const std::vector<double> &base_vector, size_t limit) -> std::vector<RID> {
-  auto vertex_ids = layer_.FindNearestNeighbors(base_vector, limit, {0});
+  auto vertex_ids = layer_.FindNearestNeighbors(base_vector, limit, layer_.SampleEntryPoints(ef_search_));
   std::vector<RID> result;
   result.reserve(vertex_ids.size());
   for (const auto &id : vertex_ids) {

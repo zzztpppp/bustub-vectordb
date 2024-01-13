@@ -76,6 +76,9 @@ auto FindCentroids(const std::vector<std::pair<Vector, RID>> &data, const std::v
 }
 
 void IVFFlatIndex::BuildIndex(std::vector<std::pair<Vector, RID>> initial_data) {
+  if (initial_data.empty()) {
+    return;
+  }
   std::random_device rand_dev;
   std::mt19937 generator(rand_dev());
   std::shuffle(initial_data.begin(), initial_data.end(), generator);
