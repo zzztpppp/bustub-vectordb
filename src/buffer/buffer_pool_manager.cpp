@@ -11,11 +11,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "buffer/buffer_pool_manager.h"
+#include <exception>
 #include <memory>
 #include <mutex>
 
 #include "common/exception.h"
 #include "common/macros.h"
+#include "fmt/core.h"
 #include "storage/page/page.h"
 #include "storage/page/page_guard.h"
 
@@ -34,7 +36,12 @@ auto BufferPoolManager::NewPage(page_id_t *page_id) -> Page * {
 }
 
 auto BufferPoolManager::FetchPage(page_id_t page_id, [[maybe_unused]] AccessType access_type) -> Page * {
-  return pages_.find(page_id)->second.get();
+  auto iter = pages_.find(page_id);
+  if (iter == pages_.end()) {
+    fmt::println(stderr, "page not exist / invalid RID: {}", page_id);
+    std::terminate();
+  }
+  return iter->second.get();
 }
 
 auto BufferPoolManager::UnpinPage(page_id_t page_id, bool is_dirty, [[maybe_unused]] AccessType access_type) -> bool {

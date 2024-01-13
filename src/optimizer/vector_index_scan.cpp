@@ -24,10 +24,10 @@
 namespace bustub {
 
 auto MatchVectorIndex(const Catalog &catalog, table_oid_t table_oid, uint32_t col_idx, VectorExpressionType dist_fn,
-                      const std::string &vector_index_match_method) -> std::optional<index_oid_t> {
+                      const std::string &vector_index_match_method) -> const IndexInfo * {
   if (vector_index_match_method == "none") {
     // do not match any index if it is set to none
-    return std::nullopt;
+    return nullptr;
   }
   auto table_indexes = catalog.GetTableIndexes(catalog.GetTable(table_oid)->name_);
   for (const auto *index : table_indexes) {
@@ -42,11 +42,11 @@ auto MatchVectorIndex(const Catalog &catalog, table_oid_t table_oid, uint32_t co
       BUSTUB_ASSERT(vector_index != nullptr, "??");
       if (vector_index->GetKeyAttrs().size() == 1 && vector_index->GetKeyAttrs()[0] == col_idx &&
           vector_index->distance_fn_ == dist_fn) {
-        return index->index_oid_;
+        return index;
       }
     }
   }
-  return std::nullopt;
+  return nullptr;
 }
 
 auto Optimizer::OptimizeAsVectorIndexScan(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef {
@@ -102,13 +102,13 @@ auto Optimizer::OptimizeAsVectorIndexScan(const AbstractPlanNodeRef &plan) -> Ab
   }
 
   if (auto *seqscan = dynamic_cast<const SeqScanPlanNode *>(sort_node->GetChildPlan().get()); seqscan != nullptr) {
-    auto idx_oid =
+    auto index_info =
         MatchVectorIndex(catalog_, seqscan->table_oid_, column_vector->GetColIdx(), vty, vector_index_match_method_);
-    if (!idx_oid.has_value()) {
+    if (index_info == nullptr) {
       return optimized_plan;
     }
-    return std::make_shared<VectorIndexScanPlanNode>(seqscan->output_schema_, seqscan->table_oid_, *idx_oid,
-                                                     base_vector, limit_n);
+    return std::make_shared<VectorIndexScanPlanNode>(seqscan->output_schema_, seqscan->table_oid_, seqscan->table_name_,
+                                                     index_info->index_oid_, index_info->name_, base_vector, limit_n);
   }
   if (auto *projection_node = dynamic_cast<const ProjectionPlanNode *>(sort_node->GetChildPlan().get());
       projection_node != nullptr) {
@@ -117,13 +117,14 @@ auto Optimizer::OptimizeAsVectorIndexScan(const AbstractPlanNodeRef &plan) -> Ab
       if (auto *projection_expr = dynamic_cast<const ColumnValueExpression *>(
               projection_node->expressions_[column_vector->GetColIdx()].get());
           projection_expr != nullptr) {
-        auto idx_oid = MatchVectorIndex(catalog_, seqscan->table_oid_, projection_expr->GetColIdx(), vty,
-                                        vector_index_match_method_);
-        if (!idx_oid.has_value()) {
+        auto index_info = MatchVectorIndex(catalog_, seqscan->table_oid_, projection_expr->GetColIdx(), vty,
+                                           vector_index_match_method_);
+        if (index_info == nullptr) {
           return optimized_plan;
         }
         auto index_scan = std::make_shared<VectorIndexScanPlanNode>(seqscan->output_schema_, seqscan->table_oid_,
-                                                                    *idx_oid, base_vector, limit_n);
+                                                                    seqscan->table_name_, index_info->index_oid_,
+                                                                    index_info->name_, base_vector, limit_n);
         return std::make_shared<ProjectionPlanNode>(projection_node->output_schema_, projection_node->expressions_,
                                                     index_scan);
       }

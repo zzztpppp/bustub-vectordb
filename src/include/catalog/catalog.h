@@ -330,9 +330,9 @@ class Catalog {
       UNIMPLEMENTED("unsupported distance function");
     }
     if (index_type == IndexType::VectorHNSWIndex) {
-      index = std::make_unique<HNSWIndex>(std::move(meta), bpm_, vty, std::move(options));
+      index = std::make_unique<HNSWIndex>(std::move(meta), bpm_, vty, options);
     } else if (index_type == IndexType::VectorIVFFlatIndex) {
-      index = std::make_unique<IVFFlatIndex>(std::move(meta), bpm_, vty, std::move(options));
+      index = std::make_unique<IVFFlatIndex>(std::move(meta), bpm_, vty, options);
     } else {
       UNIMPLEMENTED("Unsupported Index Type");
     }
@@ -343,7 +343,7 @@ class Catalog {
     for (auto iter = table_meta->table_->MakeIterator(); !iter.IsEnd(); ++iter) {
       auto [meta, tuple] = iter.GetTuple();
       auto value = tuple.GetValue(&table_meta->schema_, key_attrs[0]);
-      data.emplace_back(value.GetVector(), tuple.GetRid());
+      data.emplace_back(value.GetVector(), iter.GetRID());
     }
     index->BuildIndex(data);
 
