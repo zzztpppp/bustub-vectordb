@@ -22,10 +22,17 @@ class IVFFlatIndex : public VectorIndex {
   void InsertVectorEntry(const std::vector<double> &key, RID rid) override;
 
   BufferPoolManager *bpm_;
+  // number of buckets or lists to create when building the index
   size_t lists_{0};
+  // number of buckets or lists to probe when lookup
   size_t probe_lists_{0};
+
   using Vector = std::vector<double>;
+
+  // vector of each centroid
   std::vector<Vector> centroids_;
+
+  // vectors and RIDs in each of the centroid list
   std::vector<std::vector<std::pair<Vector, RID>>> centroids_buckets_;
 };
 

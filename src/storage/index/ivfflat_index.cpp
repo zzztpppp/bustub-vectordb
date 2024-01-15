@@ -41,10 +41,12 @@ void VectorScalarDiv(Vector &a, double x) {
   }
 }
 
+// Find the nearest centroid to the base vector in all centroids
 auto FindCentroid(const Vector &vec, const std::vector<Vector> &centroids, VectorExpressionType dist_fn) -> size_t {
   return -1;
 }
 
+// Compute new centroids based on the original centroids.
 auto FindCentroids(const std::vector<std::pair<Vector, RID>> &data, const std::vector<Vector> &centroids,
                    VectorExpressionType dist_fn) -> std::vector<Vector> {
   return {};
