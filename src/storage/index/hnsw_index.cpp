@@ -21,7 +21,7 @@ HNSWIndex::HNSWIndex(std::unique_ptr<IndexMetadata> &&metadata, BufferPoolManage
                      VectorExpressionType distance_fn, const std::vector<std::pair<std::string, int>> &options)
     : VectorIndex(std::move(metadata), distance_fn),
       vertices_(std::make_unique<std::vector<Vector>>()),
-      layer_{*vertices_, distance_fn} {
+      layers_{{*vertices_, distance_fn}} {
   std::optional<size_t> m;
   std::optional<size_t> ef_construction;
   std::optional<size_t> ef_search;
@@ -42,59 +42,51 @@ HNSWIndex::HNSWIndex(std::unique_ptr<IndexMetadata> &&metadata, BufferPoolManage
   ef_search_ = *ef_search;
 }
 
-auto NSW::FindNearestNeighbors(const std::vector<double> &base_vector, size_t limit,
-                               const std::vector<size_t> &entry_points) -> std::vector<size_t> {
+auto NSW::FindNearestNeighbors(const std::vector<double> &base_vector, size_t limit, size_t entry_point)
+    -> std::vector<size_t> {
   BUSTUB_ASSERT(limit > 0, "limit > 0");
-  std::unordered_set<size_t> candidates;
-  for (const auto entry_point : entry_points) {
-    std::unordered_set<size_t> visited;
-    std::priority_queue<std::pair<double, size_t>, std::vector<std::pair<double, size_t>>, std::greater<>> explore_q;
-    std::priority_queue<std::pair<double, size_t>, std::vector<std::pair<double, size_t>>, std::less<>> result_set;
-    auto dist = ComputeDistance(vertices_[entry_point], base_vector, dist_fn_);
-    explore_q.emplace(dist, entry_point);
-    result_set.emplace(dist, entry_point);
-    visited.emplace(entry_point);
-    while (!explore_q.empty()) {
-      auto [dist, vertex] = explore_q.top();
-      explore_q.pop();
-      if (dist > result_set.top().first) {
-        break;
-      }
-      for (const auto &neighbor : edges_[vertex]) {
-        if (visited.find(neighbor) == visited.end()) {
-          visited.emplace(neighbor);
-          auto dist = ComputeDistance(vertices_[neighbor], base_vector, dist_fn_);
-          explore_q.emplace(dist, neighbor);
-          result_set.emplace(dist, neighbor);
-          while (result_set.size() > limit) {
-            result_set.pop();
-          }
+  std::vector<size_t> candidates;
+  std::unordered_set<size_t> visited;
+  std::priority_queue<std::pair<double, size_t>, std::vector<std::pair<double, size_t>>, std::greater<>> explore_q;
+  std::priority_queue<std::pair<double, size_t>, std::vector<std::pair<double, size_t>>, std::less<>> result_set;
+  auto dist = ComputeDistance(vertices_[entry_point], base_vector, dist_fn_);
+  explore_q.emplace(dist, entry_point);
+  result_set.emplace(dist, entry_point);
+  visited.emplace(entry_point);
+  while (!explore_q.empty()) {
+    auto [dist, vertex] = explore_q.top();
+    explore_q.pop();
+    if (dist > result_set.top().first) {
+      break;
+    }
+    for (const auto &neighbor : edges_[vertex]) {
+      if (visited.find(neighbor) == visited.end()) {
+        visited.emplace(neighbor);
+        auto dist = ComputeDistance(vertices_[neighbor], base_vector, dist_fn_);
+        explore_q.emplace(dist, neighbor);
+        result_set.emplace(dist, neighbor);
+        while (result_set.size() > limit) {
+          result_set.pop();
         }
       }
     }
-    while (!result_set.empty()) {
-      candidates.emplace(result_set.top().second);
-      result_set.pop();
-    }
   }
-  std::vector<size_t> final_candidates(candidates.begin(), candidates.end());
-  std::sort(final_candidates.begin(), final_candidates.end(), [&](const auto &a, const auto &b) {
-    auto dist_a = ComputeDistance(vertices_[a], base_vector, dist_fn_);
-    auto dist_b = ComputeDistance(vertices_[b], base_vector, dist_fn_);
-    return dist_a < dist_b;
-  });
-  while (final_candidates.size() > limit) {
-    final_candidates.pop_back();
+  while (!result_set.empty()) {
+    candidates.push_back(result_set.top().second);
+    result_set.pop();
   }
-  return final_candidates;
+  std::reverse(candidates.begin(), candidates.end());
+  return candidates;
 }
 
 auto NSW::AddVertex(size_t vertex_id) { in_vertices_.push_back(vertex_id); }
 
 auto NSW::Insert(const std::vector<double> &vec, size_t vertex_id, size_t ef_construction, size_t m) {
-  auto neighbors = FindNearestNeighbors(vec, m, SampleEntryPoints(ef_construction));
-  for (size_t i = 0; i < m && i < neighbors.size(); i++) {
-    Connect(vertex_id, neighbors[i]);
+  if (!in_vertices_.empty()) {
+    auto neighbors = FindNearestNeighbors(vec, m, in_vertices_[0]);
+    for (size_t i = 0; i < m && i < neighbors.size(); i++) {
+      Connect(vertex_id, neighbors[i]);
+    }
   }
   AddVertex(vertex_id);
 }
@@ -102,22 +94,6 @@ auto NSW::Insert(const std::vector<double> &vec, size_t vertex_id, size_t ef_con
 void NSW::Connect(size_t vertex_a, size_t vertex_b) {
   edges_[vertex_a].push_back(vertex_b);
   edges_[vertex_b].push_back(vertex_a);
-}
-
-auto NSW::SampleEntryPoints(size_t num_elements) -> std::vector<size_t> {
-  std::random_device rand_dev;
-  std::mt19937 generator(rand_dev());
-  std::uniform_int_distribution<size_t> dist(0, in_vertices_.size() - 1);
-  std::unordered_set<size_t> result_set;
-  for (size_t i = 0; i < num_elements && i < in_vertices_.size(); i++) {
-    size_t vert;
-    do {
-      size_t id = dist(generator);
-      vert = in_vertices_[id];
-    } while (result_set.find(vert) != result_set.end());
-    result_set.emplace(vert);
-  }
-  return {result_set.begin(), result_set.end()};
 }
 
 auto HNSWIndex::AddVertex(const std::vector<double> &vec, RID rid) -> size_t {
@@ -134,12 +110,12 @@ void HNSWIndex::BuildIndex(std::vector<std::pair<std::vector<double>, RID>> init
 
   for (const auto &[vec, rid] : initial_data) {
     auto id = AddVertex(vec, rid);
-    layer_.Insert(vec, id, ef_construction_, m_);
+    layers_[0].Insert(vec, id, ef_construction_, m_);
   }
 }
 
 auto HNSWIndex::ScanVectorKey(const std::vector<double> &base_vector, size_t limit) -> std::vector<RID> {
-  auto vertex_ids = layer_.FindNearestNeighbors(base_vector, limit, layer_.SampleEntryPoints(ef_search_));
+  auto vertex_ids = layers_[0].FindNearestNeighbors(base_vector, limit, layers_[0].in_vertices_[0]);
   std::vector<RID> result;
   result.reserve(vertex_ids.size());
   for (const auto &id : vertex_ids) {
@@ -150,7 +126,7 @@ auto HNSWIndex::ScanVectorKey(const std::vector<double> &base_vector, size_t lim
 
 void HNSWIndex::InsertVectorEntry(const std::vector<double> &key, RID rid) {
   auto id = AddVertex(key, rid);
-  layer_.Insert(key, id, ef_construction_, m_);
+  layers_[0].Insert(key, id, ef_construction_, m_);
 }
 
 }  // namespace bustub
