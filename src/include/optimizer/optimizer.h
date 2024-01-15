@@ -19,8 +19,7 @@ namespace bustub {
  */
 class Optimizer {
  public:
-  explicit Optimizer(const Catalog &catalog, bool force_starter_rule)
-      : catalog_(catalog), force_starter_rule_(force_starter_rule) {}
+  explicit Optimizer(const Catalog &catalog, const std::unordered_map<std::string, std::string> &session_variables);
 
   auto Optimize(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
 
@@ -89,6 +88,8 @@ class Optimizer {
    */
   auto OptimizeSeqScanAsIndexScan(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
 
+  auto OptimizeAsVectorIndexScan(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
+
   /** @brief check if the index can be matched */
   auto MatchIndex(const std::string &table_name, uint32_t index_key_idx)
       -> std::optional<std::tuple<index_oid_t, std::string>>;
@@ -112,7 +113,9 @@ class Optimizer {
    */
   const Catalog &catalog_;
 
-  const bool force_starter_rule_;
+  bool force_starter_rule_;
+
+  std::string vector_index_match_method_;
 };
 
 }  // namespace bustub
