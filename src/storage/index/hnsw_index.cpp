@@ -174,10 +174,10 @@ auto HNSWIndex::ScanVectorKey(const std::vector<double> &base_vector, size_t lim
     nearest_elements = SelectNeighbors(base_vector, nearest_elements, *vertices_, 1, distance_fn_);
     entry_points = {nearest_elements[0]};
   }
-  auto neighbors = layers_[0].SearchLayer(base_vector, limit, entry_points);
+  auto neighbors = layers_[0].SearchLayer(base_vector, ef_search_, entry_points);
   std::vector<RID> result;
   result.reserve(neighbors.size());
-  for (const auto &id : neighbors) {
+  for (size_t id = 0; id < neighbors.size() && id < limit; id++) {
     result.push_back(rids_[id]);
   }
   return result;
