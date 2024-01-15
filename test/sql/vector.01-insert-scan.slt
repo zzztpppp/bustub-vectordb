@@ -1,4 +1,13 @@
 statement ok
+SELECT ARRAY [1.0, 1.0, 1.0] <-> ARRAY [-1.0, -1.0, -1.0] as distance;
+
+statement ok
+SELECT ARRAY [1.0, 1.0, 1.0] <=> ARRAY [-1.0, -1.0, -1.0] as distance;
+
+statement ok
+SELECT inner_product(ARRAY [1.0, 1.0, 1.0], ARRAY [-1.0, -1.0, -1.0]) as distance;
+
+statement ok
 CREATE TABLE t1(v1 VECTOR(3), v2 integer);
 
 statement ok
