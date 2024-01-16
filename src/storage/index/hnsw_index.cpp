@@ -170,14 +170,15 @@ void HNSWIndex::InsertVectorEntry(const std::vector<double> &key, RID rid) {
 auto HNSWIndex::ScanVectorKey(const std::vector<double> &base_vector, size_t limit) -> std::vector<RID> {
   std::vector<size_t> entry_points{layers_[layers_.size() - 1].DefaultEntryPoint()};
   for (int level = layers_.size() - 1; level >= 1; level--) {
-    auto nearest_elements = layers_[level].SearchLayer(base_vector, 1, entry_points);
+    auto nearest_elements = layers_[level].SearchLayer(base_vector, ef_search_, entry_points);
     nearest_elements = SelectNeighbors(base_vector, nearest_elements, *vertices_, 1, distance_fn_);
     entry_points = {nearest_elements[0]};
   }
-  auto neighbors = layers_[0].SearchLayer(base_vector, ef_search_, entry_points);
+  auto neighbors = layers_[0].SearchLayer(base_vector, limit > ef_search_ ? limit : ef_search_, entry_points);
+  neighbors = SelectNeighbors(base_vector, neighbors, *vertices_, limit, distance_fn_);
   std::vector<RID> result;
   result.reserve(neighbors.size());
-  for (size_t id = 0; id < neighbors.size() && id < limit; id++) {
+  for (auto id : neighbors) {
     result.push_back(rids_[id]);
   }
   return result;
@@ -193,7 +194,7 @@ void HNSWIndex::InsertVectorEntry(const std::vector<double> &key, RID rid) {
     std::vector<size_t> entry_points{layers_[layers_.size() - 1].DefaultEntryPoint()};
     int level = layers_.size() - 1;
     for (; level > target_level; level--) {
-      nearest_elements = layers_[level].SearchLayer(key, 1, entry_points);
+      nearest_elements = layers_[level].SearchLayer(key, ef_search_, entry_points);
       nearest_elements = SelectNeighbors(key, nearest_elements, *vertices_, 1, distance_fn_);
       entry_points = {nearest_elements[0]};
     }
