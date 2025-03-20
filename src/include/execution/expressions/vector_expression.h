@@ -23,15 +23,27 @@ inline auto ComputeDistance(const std::vector<double> &left, const std::vector<d
   switch (dist_fn) {
     case VectorExpressionType::L2Dist: {
       // IMPLEMENT ME
-      return 0.0;
+      std::vector<double> diff;
+      double sum = 0.0;
+      for (size_t i = 0; i < sz; ++i) {
+        sum += pow((left[i] - right[i]), 2);
+      }
+      return sqrt(sum);
     }
     case VectorExpressionType::InnerProduct: {
-      // IMPLEMENT ME
-      return 1.0;
+      double prod = 0.0;
+      for (size_t i = 0; i < sz; ++i) {
+        prod += (left[i] * right[i]);
+      }
+      return -prod;
+
     }
     case VectorExpressionType::CosineSimilarity: {
-      // IMPLEMENT ME
-      return 2.0;
+      std::vector<double> placeholder(sz, 0.0);
+      double left_norm = ComputeDistance(left, placeholder, VectorExpressionType::L2Dist);
+      double right_norm = ComputeDistance(right, placeholder, VectorExpressionType::L2Dist);
+      double dot_prod = ComputeDistance(left, right, VectorExpressionType::InnerProduct);
+      return 1 + dot_prod / (left_norm * right_norm);
     }
     default:
       BUSTUB_ASSERT(false, "Unsupported vector expr type.");
