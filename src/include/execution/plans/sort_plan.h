@@ -16,14 +16,14 @@
 #include <string>
 #include <utility>
 #include <vector>
-
 #include "binder/bound_order_by.h"
 #include "catalog/catalog.h"
 #include "execution/expressions/abstract_expression.h"
 #include "execution/plans/abstract_plan.h"
+#include "storage/table/tuple.h"
+
 
 namespace bustub {
-
 /**
  * The SortPlanNode represents a sort operation. It will sort the input with
  * the given predicate.
@@ -55,7 +55,7 @@ class SortPlanNode : public AbstractPlanNode {
   BUSTUB_PLAN_NODE_CLONE_WITH_CHILDREN(SortPlanNode);
 
   std::vector<std::pair<OrderByType, AbstractExpressionRef>> order_bys_;
-
+  std::vector<Tuple> sorted_tuple{};
  protected:
   auto PlanNodeToString() const -> std::string override;
 };
