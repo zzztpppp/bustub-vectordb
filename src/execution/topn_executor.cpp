@@ -17,7 +17,7 @@ void TopNExecutor::Init() {
     Value lhs_v = orderby_expr->Evaluate(&lhs, child_schema);
     Value rhs_v = orderby_expr->Evaluate(&rhs, child_schema);
     bool cmp_result = lhs_v.CompareLessThan(rhs_v) == CmpBool::CmpTrue;
-    return cmp_result;
+    return !cmp_result;
   };
   std::vector<Tuple> tuples;
   std::priority_queue<Tuple, std::vector<Tuple>, decltype(lambda)> pq(lambda);
