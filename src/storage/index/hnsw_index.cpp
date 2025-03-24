@@ -57,7 +57,20 @@ auto SelectNeighbors(const std::vector<double> &vec, const std::vector<size_t> &
 
 auto NSW::SearchLayer(const std::vector<double> &base_vector, size_t limit, const std::vector<size_t> &entry_points)
     -> std::vector<size_t> {
-  return {};
+  using Node = std::pair<double, size_t>;
+  auto min_cmp = [](const Node& n1, const Node& n2) {return n1.first > n2.first};
+  std::priority_queue<Node, std::vector<Node>, decltype(min_cmp)> candidates(min_cmp);
+  auto max_cmp = [](const Node& n1, const Node& n2) {return n1.first < n2.first};
+  std::priority_queue<Node, std::vector<Node>, decltype(max_cmp)> results(max_cmp);
+  std::unordered_set visited(entry_points.begin(), entry_points.end());
+  for (const auto& p: entry_points) {
+    double distance = ComputeDistance(base_vector, vertices_[p], dist_fn_);
+    candidates.emplace(distance, p);
+    results.emplace(distance, p);
+  }
+  while (true) {
+
+  }
 }
 
 auto NSW::AddVertex(size_t vertex_id) { in_vertices_.push_back(vertex_id); }
