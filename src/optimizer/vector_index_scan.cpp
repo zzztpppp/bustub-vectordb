@@ -7,7 +7,6 @@
 #include "execution/expressions/array_expression.h"
 #include "execution/expressions/column_value_expression.h"
 #include "execution/expressions/comparison_expression.h"
-#include "execution/expressions/constant_value_expression.h"
 #include "execution/expressions/vector_expression.h"
 #include "execution/plans/abstract_plan.h"
 #include "execution/plans/index_scan_plan.h"
@@ -25,8 +24,36 @@ namespace bustub {
 
 auto MatchVectorIndex(const Catalog &catalog, table_oid_t table_oid, uint32_t col_idx, VectorExpressionType dist_fn,
                       const std::string &vector_index_match_method) -> const IndexInfo * {
-  // IMPLEMENT ME
-  return nullptr;
+
+  std::string table_name = catalog.GetTable(table_oid)->name_;
+  const std::vector<IndexInfo*> table_indices = catalog.GetTableIndexes(table_name);
+  const IndexInfo* vector_idx = nullptr;
+  if (vector_index_match_method == "none") {
+    return vector_idx;
+  }
+
+  for (const auto* idx: table_indices) {
+    if (idx->index_type_ != IndexType::VectorHNSWIndex && idx->index_type_ != IndexType::VectorIVFFlatIndex) {
+      continue;
+    }
+    bool match_method_unset = vector_index_match_method == "unset" || vector_index_match_method == "";
+    bool match_on_hnsw = vector_index_match_method == "hnsw" || match_method_unset;
+    if (idx->index_type_ == IndexType::VectorHNSWIndex && !match_on_hnsw) {
+      continue;
+    }
+    bool match_on_ivfflat = vector_index_match_method == "ivfflat" || match_method_unset;
+    if (idx->index_type_ == IndexType::VectorIVFFlatIndex && !match_on_ivfflat) {
+      continue;
+    }
+    if (dynamic_cast<const VectorIndex&>(*(idx->index_)).distance_fn_ != dist_fn) {
+      continue;
+    }
+    if (idx->index_->GetKeyAttrs()[0] == col_idx) {
+      vector_idx = idx;
+      break;
+    }
+  }
+  return vector_idx;
 }
 
 auto Optimizer::OptimizeAsVectorIndexScan(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef {
@@ -70,26 +97,33 @@ auto Optimizer::OptimizeAsVectorIndexScan(const AbstractPlanNodeRef &plan) -> Ab
     target_vector_col_idx = col_expr.GetColIdx();
   }
 
-  const IndexInfo* vector_idx = nullptr;
-  TableInfo* table_info = catalog_.GetTable(scan_node->table_name_);
-  for (const auto* idx: table_indices) {
-    if (idx->index_type_ != IndexType::VectorHNSWIndex && idx->index_type_ != IndexType::VectorIVFFlatIndex) {
-      continue;
-    }
-    if (idx->index_->GetKeyAttrs()[0] == target_vector_col_idx) {
-      vector_idx = idx;
-      break;
-    }
-  }
+  const IndexInfo* vector_idx = MatchVectorIndex(
+      catalog_,
+      scan_node->table_oid_,
+      target_vector_col_idx,
+      vector_orderby->expr_type_,
+      vector_index_match_method_
+      );
 
   if (vector_idx == nullptr) {
     // No index create on the column
     return optimized_plan;
   }
-  auto& index_scan = VectorIndexScanPlanNode(plan->output_schema_, scan_node->table_oid_, scan_node->table_name_,
-                                             vector_idx->index_oid_, vector_idx->name_,
-                                             vector_val_expr.CloneWithChildren(vector_col_expr.GetChildren()),
+
+  auto array_expr = std::make_unique<const ArrayExpression>(vector_val_expr);
+  optimized_plan = std::make_unique<VectorIndexScanPlanNode>(plan->output_schema_,
+                                             scan_node->table_oid_,
+                                             scan_node->table_name_,
+                                             vector_idx->index_oid_,
+                                             vector_idx->name_,
+                                             std::move(array_expr),
                                                  topn_node->GetN());
+  // Consider projection
+  if (projection_node != nullptr) {
+    optimized_plan = std::make_unique<ProjectionPlanNode>(plan->output_schema_,
+                                                          projection_node->GetExpressions(),
+                                                          std::move(optimized_plan));
+  }
 
   return optimized_plan;
 }
