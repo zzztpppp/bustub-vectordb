@@ -55,7 +55,12 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
         key_values.emplace_back(t.GetValue(&table_info->schema_, i));
       }
       Tuple key_tuple(key_values, idx_meta->GetKeySchema());
-      idx->index_->InsertEntry(key_tuple, r, exec_ctx_->GetTransaction());
+      auto* vector_idx = dynamic_cast<VectorIndex*>(idx->index_.get());
+      if (vector_idx != nullptr) {
+        vector_idx->InsertVectorEntry(key_values[0].GetVector(), r);
+      } else {
+        idx->index_->InsertEntry(key_tuple, r, exec_ctx_->GetTransaction());
+      }
     }
   }
   // A tuple contains an integer value indicates how many tuples were inserted.

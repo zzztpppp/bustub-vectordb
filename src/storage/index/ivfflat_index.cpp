@@ -43,13 +43,33 @@ void VectorScalarDiv(Vector &a, double x) {
 
 // Find the nearest centroid to the base vector in all centroids
 auto FindCentroid(const Vector &vec, const std::vector<Vector> &centroids, VectorExpressionType dist_fn) -> size_t {
-  return -1;
+  size_t cent_idx = -1;
+  double min_distance = std::numeric_limits<double>::infinity();
+  for (size_t i = 0; i < centroids.size(); ++i) {
+    double distance = ComputeDistance(vec, centroids[i], dist_fn);
+    if (distance < min_distance) {
+        cent_idx = i;
+        min_distance = distance;
+    }
+  }
+  return cent_idx;
 }
 
 // Compute new centroids based on the original centroids.
 auto FindCentroids(const std::vector<std::pair<Vector, RID>> &data, const std::vector<Vector> &centroids,
                    VectorExpressionType dist_fn) -> std::vector<Vector> {
-  return {};
+  size_t vector_dim = centroids[0].size();
+  std::vector<Vector> new_centroids(centroids.size(), Vector(vector_dim, 0));
+  std::vector<double> group_size(centroids.size(), 0);
+  for (const auto& [v, _]: data) {
+    size_t assigned_cent = FindCentroid(v, centroids, dist_fn);
+    VectorAdd(new_centroids[assigned_cent], v);
+    group_size[assigned_cent] += 1.0;
+  }
+  for (size_t i = 0; i < centroids.size(); ++i) {
+    VectorScalarDiv(new_centroids[i], group_size[i]);
+  }
+  return new_centroids;
 }
 
 void IVFFlatIndex::BuildIndex(std::vector<std::pair<Vector, RID>> initial_data) {
@@ -58,12 +78,70 @@ void IVFFlatIndex::BuildIndex(std::vector<std::pair<Vector, RID>> initial_data) 
   }
 
   // IMPLEMENT ME
+  // Iterate for 500 times.
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<size_t> sampler(0, initial_data.size() - 1);
+  for (size_t t = 0; t < lists_; ++t) {
+    size_t choice = sampler(gen);
+    centroids_.emplace_back(initial_data[choice].first);
+  }
+  for (size_t t = 0; t < 500; ++t) {
+    centroids_ = FindCentroids(initial_data, centroids_, distance_fn_);
+  }
+  // Assign data to the final centroids result.
+  centroids_buckets_ = std::vector<std::vector<std::pair<Vector, RID>>>(lists_);
+  for (auto& [v, r]: initial_data) {
+    InsertVectorEntry(v, r);
+  }
 }
 
-void IVFFlatIndex::InsertVectorEntry(const std::vector<double> &key, RID rid) {}
+void IVFFlatIndex::InsertVectorEntry(const std::vector<double> &key, RID rid) {
+  std::cerr << "Insertion\n";
+  size_t assignment = FindCentroid(key, centroids_, distance_fn_);
+  centroids_buckets_[assignment].emplace_back(key, rid);
+}
 
 auto IVFFlatIndex::ScanVectorKey(const std::vector<double> &base_vector, size_t limit) -> std::vector<RID> {
-  return {};
+  using CentroidDistance = std::pair<double, size_t>;
+  auto cmp =  [](CentroidDistance& t1, CentroidDistance& t2) {return t1.first > t2.first;};
+  std::priority_queue<CentroidDistance, std::vector<CentroidDistance>, decltype(cmp)> centroid_pq(cmp);
+  std::vector<std::pair<Vector, RID>>  points_to_lookup;
+  for (size_t i = 0; i < lists_; ++i) {
+    double distance = ComputeDistance(base_vector, centroids_[i], distance_fn_);
+    for (auto& v: centroids_[i]) {
+      std::cerr << v << " ";
+    }
+    std::cerr << "\n";
+    centroid_pq.emplace(distance, i);
+  }
+  for (size_t i = 0; i < probe_lists_; ++i) {
+    const auto& [_, centroid_id] = centroid_pq.top();
+    centroid_pq.pop();
+    for (auto& point: centroids_buckets_[centroid_id]) {
+      points_to_lookup.emplace_back(point);
+    }
+  }
+  // Find the approximate knn
+  using PointDistance = std::pair<double, RID>;
+  auto cmp2 =  [](PointDistance & t1, PointDistance & t2) {return t1.first > t2.first;};
+  std::priority_queue<PointDistance, std::vector<PointDistance>, decltype(cmp2)> point_pq(cmp2);
+  for (auto& [point, r]: points_to_lookup) {
+    for (auto& v: point) {
+      std::cerr << v << " ";
+    }
+    std::cerr << "\n";
+    point_pq.emplace(ComputeDistance(base_vector, point, distance_fn_), r);
+  }
+  std::vector<RID> result;
+  for (size_t i = 0; i < limit; ++i) {
+    if (point_pq.empty()) {
+      break;
+    }
+    result.push_back(point_pq.top().second);
+    point_pq.pop();
+  }
+  return result;
 }
 
 }  // namespace bustub
