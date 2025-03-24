@@ -66,6 +66,8 @@ auto FindCentroids(const std::vector<std::pair<Vector, RID>> &data, const std::v
     VectorAdd(new_centroids[assigned_cent], v);
     group_size[assigned_cent] += 1.0;
   }
+  for (size_t i = 0; i < group_size.size(); ++i) {
+  }
   for (size_t i = 0; i < centroids.size(); ++i) {
     VectorScalarDiv(new_centroids[i], group_size[i]);
   }
@@ -81,9 +83,15 @@ void IVFFlatIndex::BuildIndex(std::vector<std::pair<Vector, RID>> initial_data) 
   // Iterate for 500 times.
   std::random_device rd;
   std::mt19937 gen(rd());
-  std::uniform_int_distribution<size_t> sampler(0, initial_data.size() - 1);
+  std::vector<size_t> samples;
+  samples.reserve(initial_data.size());
+  for (size_t i = 0; i < initial_data.size(); ++i) {
+    samples.push_back(i);
+  }
+  // Sample without replacement.
+  std::shuffle(samples.begin(), samples.end(), gen);
   for (size_t t = 0; t < lists_; ++t) {
-    size_t choice = sampler(gen);
+    size_t choice = samples[t];
     centroids_.emplace_back(initial_data[choice].first);
   }
   for (size_t t = 0; t < 500; ++t) {
@@ -94,10 +102,10 @@ void IVFFlatIndex::BuildIndex(std::vector<std::pair<Vector, RID>> initial_data) 
   for (auto& [v, r]: initial_data) {
     InsertVectorEntry(v, r);
   }
+  std::cout << "Here\n";
 }
 
 void IVFFlatIndex::InsertVectorEntry(const std::vector<double> &key, RID rid) {
-  std::cerr << "Insertion\n";
   size_t assignment = FindCentroid(key, centroids_, distance_fn_);
   centroids_buckets_[assignment].emplace_back(key, rid);
 }
@@ -109,28 +117,20 @@ auto IVFFlatIndex::ScanVectorKey(const std::vector<double> &base_vector, size_t 
   std::vector<std::pair<Vector, RID>>  points_to_lookup;
   for (size_t i = 0; i < lists_; ++i) {
     double distance = ComputeDistance(base_vector, centroids_[i], distance_fn_);
-    for (auto& v: centroids_[i]) {
-      std::cerr << v << " ";
-    }
-    std::cerr << "\n";
     centroid_pq.emplace(distance, i);
   }
   for (size_t i = 0; i < probe_lists_; ++i) {
-    const auto& [_, centroid_id] = centroid_pq.top();
-    centroid_pq.pop();
-    for (auto& point: centroids_buckets_[centroid_id]) {
+    const auto& [d, centroid_id] = centroid_pq.top();
+    for (const auto& point: centroids_buckets_[centroid_id]) {
       points_to_lookup.emplace_back(point);
     }
+    centroid_pq.pop();
   }
   // Find the approximate knn
   using PointDistance = std::pair<double, RID>;
   auto cmp2 =  [](PointDistance & t1, PointDistance & t2) {return t1.first > t2.first;};
   std::priority_queue<PointDistance, std::vector<PointDistance>, decltype(cmp2)> point_pq(cmp2);
   for (auto& [point, r]: points_to_lookup) {
-    for (auto& v: point) {
-      std::cerr << v << " ";
-    }
-    std::cerr << "\n";
     point_pq.emplace(ComputeDistance(base_vector, point, distance_fn_), r);
   }
   std::vector<RID> result;
