@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <iterator>
@@ -52,32 +51,104 @@ HNSWIndex::HNSWIndex(std::unique_ptr<IndexMetadata> &&metadata, BufferPoolManage
 auto SelectNeighbors(const std::vector<double> &vec, const std::vector<size_t> &vertex_ids,
                      const std::vector<std::vector<double>> &vertices, size_t m, VectorExpressionType dist_fn)
     -> std::vector<size_t> {
-  return {};
+  using Node  = std::pair<double, size_t>;
+  auto cmp = [](const Node& n1, const Node& n2) {return n1.first > n2.first;};
+  std::vector<Node> node_distances(vertex_ids.size());
+  for (const auto& vid: vertex_ids)  {
+    double d = ComputeDistance(vec, vertices[vid], dist_fn);
+    node_distances.emplace_back(d, vid);
+  }
+  std::priority_queue<Node, std::vector<Node>, decltype(cmp)> node_distance_pq(node_distances.begin(), node_distances.end(), cmp);
+  std::vector<size_t> result;
+  result.reserve(m);
+  for (size_t i = 0; i < m; ++i) {
+    if (node_distance_pq.empty()) {
+      break;
+    }
+    result.emplace_back(node_distance_pq.top().second);
+    node_distance_pq.pop();
+  }
+  return result;
 }
 
 auto NSW::SearchLayer(const std::vector<double> &base_vector, size_t limit, const std::vector<size_t> &entry_points)
     -> std::vector<size_t> {
   using Node = std::pair<double, size_t>;
-  auto min_cmp = [](const Node& n1, const Node& n2) {return n1.first > n2.first};
+  auto min_cmp = [](const Node& n1, const Node& n2) {return n1.first > n2.first;};
   std::priority_queue<Node, std::vector<Node>, decltype(min_cmp)> candidates(min_cmp);
-  auto max_cmp = [](const Node& n1, const Node& n2) {return n1.first < n2.first};
+  auto max_cmp = [](const Node& n1, const Node& n2) {return n1.first < n2.first;};
   std::priority_queue<Node, std::vector<Node>, decltype(max_cmp)> results(max_cmp);
   std::unordered_set visited(entry_points.begin(), entry_points.end());
   for (const auto& p: entry_points) {
     double distance = ComputeDistance(base_vector, vertices_[p], dist_fn_);
     candidates.emplace(distance, p);
     results.emplace(distance, p);
+    visited.emplace(p);
   }
   while (true) {
-
+    if (candidates.empty()) {
+      break;
+    }
+    const auto [distance, processing] = candidates.top();
+    if (distance > results.top().first) {
+      break;
+    }
+    candidates.pop();
+    // Add all neighbors.
+    for (const auto& neighbor: edges_[processing]) {
+      if (visited.find(neighbor) == visited.end()) {
+        double neighbor_distance = ComputeDistance(base_vector, vertices_[neighbor], dist_fn_);
+        candidates.emplace(neighbor_distance, neighbor);
+        results.emplace(neighbor_distance, neighbor);
+        visited.emplace(neighbor);
+      }
+    }
+    // Retain `limit` number of results
+    while (results.size() > limit) {
+      results.pop();
+    }
   }
+  std::vector<size_t> result_vertices;
+  while (!results.empty()) {
+    const auto& [_, v] = results.top();
+    result_vertices.push_back(v);
+    results.pop();
+  }
+  std::reverse(result_vertices.begin(), result_vertices.end());
+  return result_vertices;
 }
 
 auto NSW::AddVertex(size_t vertex_id) { in_vertices_.push_back(vertex_id); }
 
 auto NSW::Insert(const std::vector<double> &vec, size_t vertex_id, size_t ef_construction, size_t m) {
   // IMPLEMENT ME
+  const std::vector<size_t>& neighbors = SelectNeighbors(vec, in_vertices_, vertices_, m, dist_fn_);
   AddVertex(vertex_id);
+  for (const auto& v: neighbors) {
+    Connect(vertex_id, v);
+  }
+  // Prune connections down below m_max
+  for (const auto& v: neighbors) {
+    if (edges_[v].size() <= m_max_) {
+      continue;
+    }
+    // Remove a connection with max distance.
+    double max_distance = 0.0;
+    size_t to_remove = -1;
+    for (const auto& nv: edges_[v]) {
+      double distance = ComputeDistance(vertices_[v], vertices_[nv], dist_fn_);
+      if (distance > max_distance) {
+        max_distance = distance;
+        to_remove = nv;
+      }
+    }
+    // Remove the edge pointing to the neighbor
+    auto pos = std::find(edges_[v].begin(), edges_[v].end(), to_remove);
+    edges_[v].erase(pos);
+    // Remove the edge pointed from the neighbor.
+    auto pos_n = std::find(edges_[to_remove].begin(), edges_[to_remove].end(), v);
+    edges_[to_remove].erase(pos_n);
+  }
 }
 
 void NSW::Connect(size_t vertex_a, size_t vertex_b) {
