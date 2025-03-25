@@ -31,7 +31,8 @@ struct NSW {
   // insert a key into the layer, only used when implementing NSW-only index
   auto Insert(const std::vector<double> &vec, size_t vertex_id, size_t ef_construction, size_t m);
   // insert a key with a specified set of entry points.
-  void InsertUnderEntries(const std::vector<double> &vec, size_t vertex_id, const std::vector<size_t>& entry_points, size_t m);
+  void InsertUnderEntries(const std::vector<double> &vec, size_t vertex_id,
+                          const std::vector<size_t>& entry_points, size_t m, size_t m_max);
   // add a vertex to this layer
   auto AddVertex(size_t vertex_id);
   // connect two vertices

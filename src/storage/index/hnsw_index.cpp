@@ -51,6 +51,9 @@ HNSWIndex::HNSWIndex(std::unique_ptr<IndexMetadata> &&metadata, BufferPoolManage
 auto SelectNeighbors(const std::vector<double> &vec, const std::vector<size_t> &vertex_ids,
                      const std::vector<std::vector<double>> &vertices, size_t m, VectorExpressionType dist_fn)
     -> std::vector<size_t> {
+  if (vertex_ids.empty()) {
+    return {};
+  }
   using Node  = std::pair<double, size_t>;
   auto cmp = [](const Node& n1, const Node& n2) {return n1.first > n2.first;};
   std::vector<Node> node_distances;
@@ -74,6 +77,9 @@ auto SelectNeighbors(const std::vector<double> &vec, const std::vector<size_t> &
 
 auto NSW::SearchLayer(const std::vector<double> &base_vector, size_t limit, const std::vector<size_t> &entry_points)
     -> std::vector<size_t> {
+  if (in_vertices_.empty()) {
+    return {};
+  }
   using Node = std::pair<double, size_t>;
   auto min_cmp = [](const Node& n1, const Node& n2) {return n1.first > n2.first;};
   std::priority_queue<Node, std::vector<Node>, decltype(min_cmp)> candidates(min_cmp);
@@ -123,9 +129,9 @@ auto NSW::AddVertex(size_t vertex_id) { in_vertices_.push_back(vertex_id); }
 
 auto NSW::Insert(const std::vector<double> &vec, size_t vertex_id, size_t ef_construction, size_t m) {
   // IMPLEMENT ME
-  InsertUnderEntries(vec, vertex_id, in_vertices_, m);
+  InsertUnderEntries(vec, vertex_id, in_vertices_, m, m_max_);
 }
-void NSW::InsertUnderEntries(const std::vector<double> &vec, size_t vertex_id, const std::vector<size_t> &entry_points, size_t m) {
+void NSW::InsertUnderEntries(const std::vector<double> &vec, size_t vertex_id, const std::vector<size_t> &entry_points, size_t m, size_t m_max) {
   const std::vector<size_t>& neighbors = SelectNeighbors(vec, entry_points, vertices_, m, dist_fn_);
   AddVertex(vertex_id);
   for (const auto& v: neighbors) {
@@ -134,7 +140,7 @@ void NSW::InsertUnderEntries(const std::vector<double> &vec, size_t vertex_id, c
 
   // Prune connections down below m_max
   for (const auto& v: neighbors) {
-    if (edges_[v].size() <= m_max_) {
+    if (edges_[v].size() <= m_max) {
       continue;
     }
     // Remove a connection with max distance.
@@ -176,7 +182,13 @@ void HNSWIndex::BuildIndex(std::vector<std::pair<std::vector<double>, RID>> init
 }
 
 auto HNSWIndex::ScanVectorKey(const std::vector<double> &base_vector, size_t limit) -> std::vector<RID> {
-  auto vertex_ids = layers_[0].SearchLayer(base_vector, limit, {layers_[0].DefaultEntryPoint()});
+  std::cout << "In vertices for first layer " << layers_[0].in_vertices_.size() << "\n";
+  size_t n_layer = layers_.size();
+  std::vector<size_t> ep{layers_[n_layer - 1].DefaultEntryPoint()};
+  for (size_t l = n_layer - 1; l > 0; --l ) {
+    ep = layers_[l].SearchLayer(base_vector, ef_search_, ep);
+  }
+  auto vertex_ids = layers_[0].SearchLayer(base_vector, limit, ep);
   std::vector<RID> result;
   result.reserve(vertex_ids.size());
   for (const auto &id : vertex_ids) {
@@ -190,12 +202,33 @@ void HNSWIndex::InsertVectorEntry(const std::vector<double> &key, RID rid) {
   // Decide which layer and below to insert
   std::uniform_real_distribution<double> dist(0.0, 1.0);
   size_t begin_l = std::floor(-std::log(dist(generator_)) * m_l_);
-  std::vector<size_t> ep{layers_[layers_.size() - 1].DefaultEntryPoint()};
-  for (size_t l = m_l_ - 1; l > begin_l; --l) {
+  std::vector<size_t> ep{};
+  if (!layers_[layers_.size() - 1].in_vertices_.empty()) {
+    ep.push_back(layers_[layers_.size() - 1].DefaultEntryPoint());
+  }
+  std::cerr << "Insert begin at " << begin_l << "\n";
+  std::cerr << "Total layers " << layers_.size() << "\n";
+  size_t n_layers = layers_.size();
+  if (n_layers <= begin_l) {
+    for (size_t i = 0; i < begin_l - n_layers + 1; ++i) {
+      std::cerr << "Create new layer\n";
+      layers_.push_back({*vertices_, distance_fn_});
+    }
+  }
+  n_layers = layers_.size();
+  std::cerr << "Total layers after creation " << n_layers << "\n";
+  for (size_t l = n_layers - 1; l > begin_l; --l) {
+    std::cerr << "Before Search at layer " << l << "\n";
     ep = layers_[l].SearchLayer(key, 1, ep);
   }
-  for (size_t l = begin_l; l >= 0; --l) {
-    layers_[l].Insert(key, id, ef_construction_, m_);
+  for (size_t i = 0; i < begin_l + 1; ++i) {
+    size_t l = begin_l - i;
+    std::cerr << "After Search at layer " << l << "\n";
+    std::cerr << "Layer size " << layers_[l].in_vertices_.size() << "\n";
+    size_t m_max = l > 0? m_max_: m_max_0_;
+    std::cerr << "M_max "  << m_max << "\n";
+    ep = layers_[l].SearchLayer(key, ef_construction_, ep);
+    layers_[l].InsertUnderEntries(key, id, ep, m_, m_max);
   }
 }
 
