@@ -123,7 +123,10 @@ auto NSW::AddVertex(size_t vertex_id) { in_vertices_.push_back(vertex_id); }
 
 auto NSW::Insert(const std::vector<double> &vec, size_t vertex_id, size_t ef_construction, size_t m) {
   // IMPLEMENT ME
-  const std::vector<size_t>& neighbors = SelectNeighbors(vec, in_vertices_, vertices_, m, dist_fn_);
+  InsertUnderEntries(vec, vertex_id, in_vertices_, m);
+}
+void NSW::InsertUnderEntries(const std::vector<double> &vec, size_t vertex_id, const std::vector<size_t> &entry_points, size_t m) {
+  const std::vector<size_t>& neighbors = SelectNeighbors(vec, entry_points, vertices_, m, dist_fn_);
   AddVertex(vertex_id);
   for (const auto& v: neighbors) {
     Connect(vertex_id, v);
@@ -167,7 +170,6 @@ auto HNSWIndex::AddVertex(const std::vector<double> &vec, RID rid) -> size_t {
 
 void HNSWIndex::BuildIndex(std::vector<std::pair<std::vector<double>, RID>> initial_data) {
   std::shuffle(initial_data.begin(), initial_data.end(), generator_);
-
   for (const auto &[vec, rid] : initial_data) {
     InsertVectorEntry(vec, rid);
   }
@@ -185,7 +187,16 @@ auto HNSWIndex::ScanVectorKey(const std::vector<double> &base_vector, size_t lim
 
 void HNSWIndex::InsertVectorEntry(const std::vector<double> &key, RID rid) {
   auto id = AddVertex(key, rid);
-  layers_[0].Insert(key, id, ef_construction_, m_);
+  // Decide which layer and below to insert
+  std::uniform_real_distribution<double> dist(0.0, 1.0);
+  size_t begin_l = std::floor(-std::log(dist(generator_)) * m_l_);
+  std::vector<size_t> ep{layers_[layers_.size() - 1].DefaultEntryPoint()};
+  for (size_t l = m_l_ - 1; l > begin_l; --l) {
+    ep = layers_[l].SearchLayer(key, 1, ep);
+  }
+  for (size_t l = begin_l; l >= 0; --l) {
+    layers_[l].Insert(key, id, ef_construction_, m_);
+  }
 }
 
 }  // namespace bustub
