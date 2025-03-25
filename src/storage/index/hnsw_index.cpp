@@ -53,7 +53,8 @@ auto SelectNeighbors(const std::vector<double> &vec, const std::vector<size_t> &
     -> std::vector<size_t> {
   using Node  = std::pair<double, size_t>;
   auto cmp = [](const Node& n1, const Node& n2) {return n1.first > n2.first;};
-  std::vector<Node> node_distances(vertex_ids.size());
+  std::vector<Node> node_distances;
+  node_distances.reserve(vertex_ids.size());
   for (const auto& vid: vertex_ids)  {
     double d = ComputeDistance(vec, vertices[vid], dist_fn);
     node_distances.emplace_back(d, vid);
@@ -127,6 +128,7 @@ auto NSW::Insert(const std::vector<double> &vec, size_t vertex_id, size_t ef_con
   for (const auto& v: neighbors) {
     Connect(vertex_id, v);
   }
+
   // Prune connections down below m_max
   for (const auto& v: neighbors) {
     if (edges_[v].size() <= m_max_) {
