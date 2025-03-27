@@ -97,23 +97,24 @@ auto NSW::SearchLayer(const std::vector<double> &base_vector, size_t limit, cons
       break;
     }
     const auto [distance, processing] = candidates.top();
+    candidates.pop();
     if (distance > results.top().first) {
       break;
     }
-    candidates.pop();
     // Add all neighbors.
     for (const auto& neighbor: edges_[processing]) {
       if (visited.find(neighbor) == visited.end()) {
         double neighbor_distance = ComputeDistance(base_vector, vertices_[neighbor], dist_fn_);
+
         candidates.emplace(neighbor_distance, neighbor);
         results.emplace(neighbor_distance, neighbor);
         visited.emplace(neighbor);
+        while (results.size() > limit) {
+          results.pop();
+        }
       }
     }
     // Retain `limit` number of results
-    while (results.size() > limit) {
-      results.pop();
-    }
   }
   std::vector<size_t> result_vertices;
   while (!results.empty()) {
@@ -138,27 +139,24 @@ void NSW::InsertUnderEntries(const std::vector<double> &vec, size_t vertex_id, c
     Connect(vertex_id, v);
   }
 
+  for (const auto& v: in_vertices_) {
+    bool v_empt = edges_[v].empty();
+    if (in_vertices_.size() > 1) {
+      BUSTUB_ASSERT(!v_empt, "No connection");
+    }
+  }
   // Prune connections down below m_max
   for (const auto& v: neighbors) {
-    if (edges_[v].size() <= m_max) {
-      continue;
+    auto &edges = edges_[v];
+    if (edges.size() > m_max) {
+      auto new_neighbors = SelectNeighbors(vertices_[v], edges, vertices_, m_max, dist_fn_);
+      edges = new_neighbors;
     }
-    // Remove a connection with max distance.
-    double max_distance = 0.0;
-    size_t to_remove = -1;
-    for (const auto& nv: edges_[v]) {
-      double distance = ComputeDistance(vertices_[v], vertices_[nv], dist_fn_);
-      if (distance > max_distance) {
-        max_distance = distance;
-        to_remove = nv;
-      }
+  }
+  for (const auto& v: in_vertices_) {
+    if (in_vertices_.size() > 1) {
+      BUSTUB_ASSERT(!edges_[v].empty(), "No connection");
     }
-    // Remove the edge pointing to the neighbor
-    auto pos = std::find(edges_[v].begin(), edges_[v].end(), to_remove);
-    edges_[v].erase(pos);
-    // Remove the edge pointed from the neighbor.
-    auto pos_n = std::find(edges_[to_remove].begin(), edges_[to_remove].end(), v);
-    edges_[to_remove].erase(pos_n);
   }
 }
 
@@ -182,7 +180,6 @@ void HNSWIndex::BuildIndex(std::vector<std::pair<std::vector<double>, RID>> init
 }
 
 auto HNSWIndex::ScanVectorKey(const std::vector<double> &base_vector, size_t limit) -> std::vector<RID> {
-  std::cout << "In vertices for first layer " << layers_[0].in_vertices_.size() << "\n";
   size_t n_layer = layers_.size();
   std::vector<size_t> ep{layers_[n_layer - 1].DefaultEntryPoint()};
   for (size_t l = n_layer - 1; l > 0; --l ) {
@@ -201,35 +198,34 @@ void HNSWIndex::InsertVectorEntry(const std::vector<double> &key, RID rid) {
   auto id = AddVertex(key, rid);
   // Decide which layer and below to insert
   std::uniform_real_distribution<double> dist(0.0, 1.0);
-  size_t begin_l = std::floor(-std::log(dist(generator_)) * m_l_);
+  int begin_l = std::floor(-std::log(dist(generator_)) * m_l_);
   std::vector<size_t> ep{};
-  if (!layers_[layers_.size() - 1].in_vertices_.empty()) {
-    ep.push_back(layers_[layers_.size() - 1].DefaultEntryPoint());
-  }
-  std::cerr << "Insert begin at " << begin_l << "\n";
-  std::cerr << "Total layers " << layers_.size() << "\n";
   size_t n_layers = layers_.size();
-  if (n_layers <= begin_l) {
-    for (size_t i = 0; i < begin_l - n_layers + 1; ++i) {
-      std::cerr << "Create new layer\n";
-      layers_.push_back({*vertices_, distance_fn_});
+  if (!layers_[0].in_vertices_.empty()) {
+    ep.push_back(layers_[layers_.size() - 1].DefaultEntryPoint());
+    int l = static_cast<int>(n_layers - 1);
+    for (;l > begin_l; --l) {
+      ep = layers_[l].SearchLayer(key, 1, ep);
     }
+    if (!ep.empty()) {
+    }
+    for (; l >= 0; --l) {
+      size_t m_max = l > 0 ? m_max_ : m_max_0_;
+      ep = layers_[l].SearchLayer(key, ef_construction_, ep);
+      layers_[l].InsertUnderEntries(key, id, ep, m_, m_max);
+    }
+  } else {
+    layers_[0].AddVertex(id);
   }
-  n_layers = layers_.size();
-  std::cerr << "Total layers after creation " << n_layers << "\n";
-  for (size_t l = n_layers - 1; l > begin_l; --l) {
-    std::cerr << "Before Search at layer " << l << "\n";
-    ep = layers_[l].SearchLayer(key, 1, ep);
+  while (true) {
+    if (static_cast<int>(layers_.size()) >= begin_l) {
+      break;
+    }
+    auto layer = NSW{*vertices_, distance_fn_, m_max_};
+    layer.AddVertex(id);
+    layers_.push_back(std::move(layer));
   }
-  for (size_t i = 0; i < begin_l + 1; ++i) {
-    size_t l = begin_l - i;
-    std::cerr << "After Search at layer " << l << "\n";
-    std::cerr << "Layer size " << layers_[l].in_vertices_.size() << "\n";
-    size_t m_max = l > 0? m_max_: m_max_0_;
-    std::cerr << "M_max "  << m_max << "\n";
-    ep = layers_[l].SearchLayer(key, ef_construction_, ep);
-    layers_[l].InsertUnderEntries(key, id, ep, m_, m_max);
-  }
+
 }
 
 }  // namespace bustub
